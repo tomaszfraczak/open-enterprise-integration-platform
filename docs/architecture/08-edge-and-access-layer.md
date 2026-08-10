@@ -26,3 +26,4 @@ This layer is interchangeable to fit the target environment's network topology:
 ## 3. Security Policies
 * **Zero-Trust Ingress:** No internal service may expose a public LoadBalancer; all traffic must pass through the Edge Layer.
 * **Rate Limiting:** Mandatory burst and average limits per consumer.
+* **Operator console (APISIX Dashboard):** Full profile exposes the embedded Admin UI (`/ui/` on the Admin port) behind allow-lists / SSO — see internal runbook `apisix-dashboard.md` and [upstream Dashboard docs](https://apisix.apache.org/docs/apisix/dashboard/). Lite profile uses file-driven standalone APISIX without Dashboard.

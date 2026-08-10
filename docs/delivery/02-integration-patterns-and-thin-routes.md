@@ -89,3 +89,54 @@ Personally Identifiable Information (PII), Payment Card Industry (PCI) data, and
 ### Execution
 * **Log Masking:** Domain teams must utilize native Log Masking features to obfuscate sensitive fields (e.g., `password=***`, `credit_card=***`) before they are flushed to standard output or the observability stack.
 * **Secure Enclaves for Secrets:** Secrets and API tokens must never be hardcoded or logged; they must be dynamically fetched via the platform's secrets management integration within the **Security & Identity Layer** (e.g., Vault).
+---
+
+## 7. Camel Quarkus vs plain Quarkus (decision guide)
+
+### Statement
+**Tier C integrations** on this platform use **Apache Camel on Quarkus (Camel Quarkus)** as the golden path: thin Camel routes for mediation/EIP, Quarkus CDI beans for domain logic and non-trivial mapping.  
+**Plain Quarkus** (no Camel) is for ordinary domain microservices that are *not* platform integrations (simple CRUD, internal APIs without edge/bus/legacy connectors).
+
+Do **not** drop Camel only because a flow has “heavy if/else” — put that logic in beans and keep a thin route.
+
+### Decision flow
+
+```mermaid
+flowchart TD
+  Q0{"Is this a Tier C integration?<br/>(edge / partners / bus / legacy / EIP)"}
+  Q1{"Primary shape?"}
+  Q2{"Legacy or protocol adapters?<br/>(FTP, SAP, SOAP, …)"}
+  Q3{"Event-driven / messaging?"}
+
+  A0["Plain Quarkus<br/>(REST + Panache / domain app)<br/>— outside OEIP golden path"]
+  A1["Camel Quarkus — rest-ingress<br/>+ beans (MapStruct / Jackson / Jolt)"]
+  A2["Camel Quarkus — Camel components<br/>(system-adapter style)"]
+  A3["Camel Quarkus — Kafka + EIPs<br/>(kafka-worker)"]
+  A4["Camel Quarkus — thin route<br/>+ Reactive or Kafka consumer<br/>(prefer Camel for Tier C)"]
+
+  Q0 -->|"No — simple domain CRUD / app"| A0
+  Q0 -->|"Yes — integration"| Q1
+
+  Q1 -->|"HTTP accept → transform / orchestrate"| A1
+  Q1 -->|"Connect external / legacy systems"| Q2
+  Q1 -->|"Events / async"| Q3
+
+  Q2 -->|"Yes"| A2
+  Q2 -->|"No — modern HTTP only"| A1
+
+  Q3 -->|"Complex routing / EIP / multi-consumer"| A3
+  Q3 -->|"Simple pub/sub"| A4
+```
+
+### Mapping cheat sheet
+
+| Situation | Choose | Where logic lives |
+|-----------|--------|-------------------|
+| Partner HTTP → platform | Camel Quarkus (`rest-ingress`) | Route thin; mapping/rules in CDI beans |
+| Structural JSON reshape | Camel Quarkus | Jolt / DataSonnet / MapStruct **in beans**, not a fat DSL |
+| Heavy business if/else | Camel Quarkus | Quarkus beans — **not** “switch to plain Quarkus” |
+| FTP / SAP / SOAP / odd protocols | Camel Quarkus + components | Thin adapter route |
+| Kafka facts + enrich/persist | Camel Quarkus (`kafka-worker`) | EIP + idempotency in route; domain in beans |
+| Domain CRUD with no integration story | Plain Quarkus | Outside Tier C template |
+
+Scaffold: platform Camel Quarkus template (see [Golden Path](./01-golden-path-and-cicd.md)). Internal archetypes: platform architecture notes for Camel building blocks.

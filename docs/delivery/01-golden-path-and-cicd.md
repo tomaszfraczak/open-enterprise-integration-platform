@@ -23,6 +23,7 @@ When a domain team needs to build a new integration (Tier C), they follow this s
 Instead of starting from an empty repository and figuring out how to connect to the platform, the developer clicks **"Use this template"** on an official Platform Template Repository (e.g., `platform-camel-quarkus-template`).
 * **What it does:** This instantly provisions a repository pre-configured with the correct Maven/Gradle build scripts, Dockerfiles, standard logging dependencies, and Helm charts. The developer immediately starts writing business logic.
 * **Naming Conventions Enforcement:** The templates automatically enforce standard naming conventions for new repositories: `platform-[domain]-[service-type]-src` for the source code and `platform-[domain]-gitops` for the manifests.
+* **When to use this template:** Tier C integrations (edge, bus, legacy connectors, EIP). For plain domain CRUD without an integration story, see [Integration Patterns §7](./02-integration-patterns-and-thin-routes.md) (Camel Quarkus vs plain Quarkus).
 
 ### Step 2: Local Development and Testing
 The developer writes their Apache Camel routes using their preferred IDE (IntelliJ, VS Code).
