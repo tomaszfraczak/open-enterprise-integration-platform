@@ -20,10 +20,15 @@ Developers are already comfortable with Git, Pull Requests, and IDEs. Building a
 When a domain team needs to build a new integration (Tier C), they follow this standardized workflow. This workflow respects the **Responsibility Model**, where the Domain Team focuses solely on delivering code for the *Integration* and *Processing* layers, while the Platform Team manages the underlying CI/CD engine (Automation Layer) and repositories.
 
 ### Step 1: Bootstrap via Template (The Golden Path)
-Instead of starting from an empty repository and figuring out how to connect to the platform, the developer clicks **"Use this template"** on an official Platform Template Repository (e.g., `platform-camel-quarkus-template`).
-* **What it does:** This instantly provisions a repository pre-configured with the correct Maven/Gradle build scripts, Dockerfiles, standard logging dependencies, and Helm charts. The developer immediately starts writing business logic.
-* **Naming Conventions Enforcement:** The templates automatically enforce standard naming conventions for new repositories: `platform-[domain]-[service-type]-src` for the source code and `platform-[domain]-gitops` for the manifests.
+Instead of starting from an empty repository, copy or generate from the official platform template:
+
+**Source of truth:** `platform-iac-core/templates/quarkus-camel-app`  
+(Reference integration: `platform-iac-core/examples/lite-demo`.)
+
+* **What it does:** Maven/Quarkus/Camel layout, Dockerfile, health, Helm chart (full), archetype toggles. The developer starts with thin routes + beans.
+* **Naming:** `platform-[domain]-[service-type]-src` for source; `platform-[domain]-gitops` for manifests on the **full** profile.
 * **When to use this template:** Tier C integrations (edge, bus, legacy connectors, EIP). For plain domain CRUD without an integration story, see [Integration Patterns §7](./02-integration-patterns-and-thin-routes.md) (Camel Quarkus vs plain Quarkus).
+* **Profiles:** **lite** deploys images to Azure Container Apps; **full** pushes to the platform registry and syncs via Argo CD. See [Developer Onboarding (Azure)](./05-developer-onboarding-guide-azure.md).
 
 ### Step 2: Local Development and Testing
 The developer writes their Apache Camel routes using their preferred IDE (IntelliJ, VS Code).
@@ -34,13 +39,13 @@ Once the logic is ready, the developer opens a Pull Request (PR).
 * **Automated Checks:** GitHub Actions (or GitLab CI) automatically run unit tests, enforce code linting, scan for vulnerabilities (e.g., exposed secrets), and validate that the architectural contracts (e.g., OpenAPI specs) are unbroken.
 * **Approval:** Senior engineers or domain architects approve the PR.
 
-### Step 4: Merge and GitOps Sync (ArgoCD)
-Once merged to the `main` branch, the CI pipeline builds the container image. The image is tagged following the convention `registry.platform.io/[domain]/[service-name]:[tag]` (where the tag is the Git Commit SHA).
-* **Registry Validation:** The image is pushed to the **Platform Container Registry (Harbor)**, where it undergoes automated CVE scanning. If critical vulnerabilities are found, the process halts.
-* **The Magic:** The developer does *not* run `kubectl apply`. ArgoCD (the GitOps controller residing in the Control Plane's Automation Layer) detects the change in the Git repository and automatically synchronizes the cluster state with the code.
+### Step 4: Merge and deploy
+Once merged to `main`, CI builds the container image (tag = Git SHA).
 
-### Step 5: Operations via Native Tools
-Post-deployment, developers use standard, best-in-class UI tools provided by the platform:
-* **Deployment Status:** Viewed in the ArgoCD UI.
-* **Logs & Traces:** Viewed in Grafana/Loki (or the client's compatible swapped component in the Observability Layer).
-* **API Metrics:** Viewed in the API Gateway dashboard (Edge Layer).
+* **lite:** image → **ACR** → tenant Update Lite Apps / Deploy Lite.  
+* **full:** image → platform registry → GitOps manifest bump → **Argo CD** syncs AKS. The developer does *not* run `kubectl apply` for platform-managed paths.  
+* **Registry:** ACR is the Phase-1 default; Harbor is an optional later swap.
+
+### Step 5: Operations via native tools
+* **lite:** `bootstrap/lite-observe.sh`, ACA Log stream, Log Analytics (lenses A/B/C).
+* **full:** Argo CD UI, Grafana/Loki (or swapped obs stack), API gateway metrics on the edge layer.

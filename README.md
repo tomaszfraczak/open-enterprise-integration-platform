@@ -34,12 +34,13 @@ By adopting this architectural framework, you are not just acquiring a set of op
 
 ## Documentation Structure
 
-The documentation in this repository is divided into specific domains. Please refer to the directories below for detailed standards:
+* [`docs/architecture`](./docs/architecture) — Core principles, layered standards, component swap  
+* [`docs/delivery`](./docs/delivery) — Onboarding, CI/CD gates, GitOps, thin routes / Camel EH  
+* [`docs/governance`](./docs/governance) — Operating model, identity  
+* [`docs/operations`](./docs/operations) — Bootstrap/IaC, observability, DR  
+* [`docs/compliance-and-security`](./docs/compliance-and-security) — Security baselines  
 
-* `/architecture` - Core principles, layered infrastructure standards, support models, and component swap guidelines.
-* `/delivery` - Developer onboarding, CI/CD Quality Gates, GitOps workflows, and "Thin Route" coding patterns.
-* `/governance` - Team topologies, multi-tenancy isolation, contract lifecycle (OAS/AsyncAPI), and RBAC identity models.
-* `/operations` - Observability standards, incident response (YBIYRI), disaster recovery, and state management.
+**Profiles:** public docs cover both **lite** (ACA) and **full** (AKS). Implementation detail for lite labs lives in private `platform-iac-core/docs/internal/`.
 
 Architecture overview diagram: [`oeip-diagram.mmd`](oeip-diagram.mmd)
 

@@ -1,48 +1,65 @@
-# Developer Onboarding Guide
+# Developer Onboarding Guide (Azure)
 
-## Welcome to the Platform
-This guide will help you get started with building modern, resilient integrations following the "Golden Path" delivery model.
-
----
-
-## 1. Core Philosophy: "Thin Routes"
-Your primary goal is to deliver business value through **Thin Routes**. 
-* Use **Apache Camel** for routing, mediation, and data transformation (**Integration Layer**).
-* Use **Quarkus** for complex business rules and domain logic (**Processing Layer**).
-* Infrastructure (Kafka, Databases, API Gateway) is provided to you as a managed service.
+## Welcome
+Build integrations on the OEIP **Golden Path**: thin Camel routes + Quarkus beans, contracts first, platform-owned edge / bus / identity.
 
 ---
 
-## 2. Your Development Stack on Azure
+## 1. Core philosophy: thin routes
 
-When operating on Azure, the Platform utilizes the following Tier B components:
-* **Runtime:** Your services run on **Azure Kubernetes Service (AKS)**.
-* **Messaging:** Your events flow through **Azure Event Hubs** (Kafka-compatible).
-* **Persistence:** Technical data is stored in **Azure Cache for Redis** and **Azure Database for PostgreSQL**.
-* **Secrets:** All credentials are dynamically injected from **Azure Key Vault**.
+* **Apache Camel (Camel Quarkus)** — routing, mediation, EIP, retries/DLQ (**Integration Layer**).
+* **Quarkus CDI beans** — domain rules and non-trivial mapping (**Processing Layer**).
+* Platform supplies edge, messaging, data, and observability as managed capabilities.
 
----
-
-## 3. The Lifecycle of an Integration (Step-by-Step)
-
-### Step 1: Bootstrap (The Golden Path)
-Do not create a repository from scratch. Use the official `platform-template-quarkus-camel` Git template.
-* Follow the naming convention: `platform-[domain]-[service-name]-src`.
-
-### Step 2: Local Development
-Use `quarkus dev` mode. Thanks to **Testcontainers**, the Platform will automatically spin up local instances of Kafka and PostgreSQL in Docker. You do not need Azure access to test your integration locally.
-
-### Step 3: Deployment (GitOps)
-Once your code is merged to the `main` branch, the automated workflow takes over:
-1.  **CI Pipeline:** Runs unit tests and verifies **Quality Gates** (Security, Coverage, Contracts).
-2.  **Container Registry:** Builds your image and pushes it to **Harbor**, where it is scanned for vulnerabilities.
-3.  **GitOps Sync:** **ArgoCD** detects the change and synchronizes the AKS cluster state with your code.
+Patterns + error handling: [Integration Patterns](./02-integration-patterns-and-thin-routes.md) (§2.4 EH, §7 Camel vs plain Quarkus).
 
 ---
 
-## 4. Pre-Deployment Checklist (Definition of Done)
-* [ ] **Statelessness:** Is the service completely stateless?
-* [ ] **Health Probes:** Are `/q/health/live` and `/q/health/ready` endpoints exposed?
-* [ ] **Logging:** Are logs structured in JSON with a valid `Trace-ID`?
-* [ ] **Contract:** Does the API match the OpenAPI/AsyncAPI specification?
-* [ ] **Resources:** Are CPU/Memory limits and requests defined in the manifests?
+## 2. Two Azure profiles (pick one)
+
+| | **lite** | **full** |
+|---|----------|----------|
+| Compute | Azure Container Apps | AKS |
+| Messaging | Redpanda (ACA) | Event Hubs / Kafka |
+| Edge | Optional APISIX ACA (standalone YAML) | APISIX Helm + etcd (+ Dashboard) |
+| Delivery | GHA → ACR → ACA | CI → registry → Argo CD |
+| When | Labs / cost-capped subs | Funded enterprise |
+
+Tenant config lives in `platform-client-<client>-infra` (`platform.yaml` + TF). Platform modules live in private `platform-iac-core`.
+
+---
+
+## 3. Lifecycle of an integration
+
+### Step 1: Bootstrap (Golden Path)
+Do not start from an empty repo. Copy or generate from:
+
+**`platform-iac-core/templates/quarkus-camel-app`**
+
+(Published GitHub template name may vary; path above is the source of truth.)
+
+End-to-end reference (REST → Avro Kafka → gRPC → Postgres + DLQ):  
+`platform-iac-core/examples/lite-demo`
+
+Naming: `platform-[domain]-[service]-src` (and `platform-[domain]-gitops` on full).
+
+### Step 2: Local development
+* `quarkus dev` / Camel tests / Compose under the template or lite-demo.
+* You do not need Azure to prove the route locally.
+
+### Step 3: Deploy
+* **lite:** build images → ACR → **Update Lite Apps** / Deploy Lite (tenant workflows).
+* **full:** CI pushes image → GitOps repo bump → **Argo CD** syncs AKS (no `kubectl apply` for platform paths).
+
+Registry: **ACR** in Phase 1; Harbor remains an optional swap later — do not assume Harbor on day one.
+
+---
+
+## 4. Pre-deployment checklist (Definition of Done)
+
+* [ ] Stateless pods; durable state only in bus / DB  
+* [ ] Health: `/q/health/live` and `/q/health/ready`  
+* [ ] `Correlation-ID` + structured `service=` / `event=` logs  
+* [ ] Error handling: `onException` + DLQ / HTTP 4xx·503 (see §2.4)  
+* [ ] Contracts: OpenAPI / Avro / proto committed  
+* [ ] Resources: CPU/memory limits on the target profile (ACA or Helm)

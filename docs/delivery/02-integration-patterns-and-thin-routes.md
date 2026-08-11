@@ -40,6 +40,53 @@ Asynchronous communication relies on decoupled queues and topics (the **Event / 
 ### 2.3. Universal Retry Policies
 * **Transient vs. Permanent:** Integrations must inspect error codes. Transient errors (e.g., `HTTP 503`, network timeouts) trigger an exponential backoff retry. Permanent errors (e.g., `HTTP 400 Bad Request`, invalid JSON) must *never* be retried and should immediately fail or route to a DLQ.
 
+### 2.4. Error handling in Camel Quarkus (reference)
+
+Policy above is mandatory. In Camel Quarkus it is implemented with **`onException`** (classify failures) + **`errorHandler` / Dead Letter Channel** (retries then DLQ) — not ad-hoc `try/catch` scattered through fat processors.
+
+```mermaid
+flowchart TD
+  Fail["Failure in route"]
+  Class{"Classify exception"}
+  Perm["Permanent<br/>(bad JSON / Avro / 4xx / invalid arg)"]
+  Trans["Transient<br/>(timeout / 5xx / broker / DB down)"]
+  Sync{"Sync HTTP ingress?"}
+  R4xx["HTTP 4xx + structured body<br/>handled=true"]
+  Retry["Redeliver with exponential backoff"]
+  Exhaust{"Retries exhausted?"}
+  DLQ["Publish to DLQ topic<br/>+ log event=dlq"]
+  R5xx["HTTP 503 (or 500) to caller"]
+
+  Fail --> Class
+  Class --> Perm
+  Class --> Trans
+  Perm --> Sync
+  Sync -->|Yes| R4xx
+  Sync -->|No — Kafka consumer| DLQ
+  Trans --> Retry
+  Retry --> Exhaust
+  Exhaust -->|No| Retry
+  Exhaust -->|Yes, async| DLQ
+  Exhaust -->|Yes, sync ingress| R5xx
+```
+
+| Concern | Camel mechanism | Rule |
+|---------|-----------------|------|
+| Default async path | `errorHandler(deadLetterChannel("kafka:…dlq…"))` + `maximumRedeliveries` + exponential backoff | Exhausted → **DLQ**, never silent drop |
+| Permanent errors | `onException(…Permanent…).maximumRedeliveries(0).handled(true)` then DLQ or HTTP 4xx | **No** retry loop on poison pills |
+| Sync ingress mapping | `onException(JsonProcessingException…).handled(true)` → `400` | Client can fix and retry |
+| Sync ingress broker blip | Limited redelivery, then `503` | Client / edge retries later |
+| Egress HTTP | `circuitBreaker()` + `onFallback` (timeout required) | Fail fast; optional degrade |
+| Idempotency | Durable key (DB unique / Redis) + optional Camel `idempotentConsumer` | At-least-once safe |
+| Observability | Log `service=… event=error\|dlq correlationId=…` + keep original headers on DLQ | Lens A + alert on DLQ depth |
+
+**Reference code (copy shape, not business):**
+* Sync ingress EH — `platform-iac-core/examples/lite-demo/orders-api` (`OrdersApiRoutes`)
+* Async consumer + Kafka DLQ + durable idempotency — `…/orders-worker` (`OrdersWorkerRoutes`)
+* Template skeleton (DLQ + egress CB) — `platform-iac-core/templates/quarkus-camel-app` (`EngineRouter`)
+
+DLQ topic naming: `{domain}.{entity}.dlq.v1` (demo: `orders.created.dlq.v1`) or tenant-wide `system.poison-pill.dlq.v1` — one style per tenant.
+
 ---
 
 ## 3. Idempotency by Default
@@ -52,7 +99,7 @@ Modern event-driven architectures (like Apache Kafka or RabbitMQ) guarantee "at 
 
 ### Implications
 * **Idempotency Keys:** Every incoming message must have a unique identifier (e.g., `Correlation-ID` or `Order-ID`).
-* **Implementation:** Developers must use Camel's Idempotent Consumer pattern, backed by a persistent repository in the **Persistence Layer** (e.g., Redis cache or a database constraint), to silently discard duplicate events before they trigger any business logic.
+* **Implementation:** Prefer a **durable** idempotency key in the **Persistence Layer** (e.g., `UNIQUE(correlation_id)` + `ON CONFLICT DO NOTHING`, or Redis / Camel `JdbcMessageIdRepository`). In-memory Camel `idempotentConsumer` is only for local labs. See lite-demo `orders-worker` for the durable SQL pattern.
 
 ---
 
@@ -89,6 +136,7 @@ Personally Identifiable Information (PII), Payment Card Industry (PCI) data, and
 ### Execution
 * **Log Masking:** Domain teams must utilize native Log Masking features to obfuscate sensitive fields (e.g., `password=***`, `credit_card=***`) before they are flushed to standard output or the observability stack.
 * **Secure Enclaves for Secrets:** Secrets and API tokens must never be hardcoded or logged; they must be dynamically fetched via the platform's secrets management integration within the **Security & Identity Layer** (e.g., Vault).
+
 ---
 
 ## 7. Camel Quarkus vs plain Quarkus (decision guide)
