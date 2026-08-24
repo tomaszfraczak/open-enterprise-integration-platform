@@ -87,6 +87,26 @@ flowchart TD
 
 DLQ topic naming: `{domain}.{entity}.dlq.v1` (demo: `orders.created.dlq.v1`) or tenant-wide `system.poison-pill.dlq.v1` — one style per tenant.
 
+### 2.5. Resiliency package (Camel Quarkus)
+
+For any integration with **outbound** HTTP/gRPC/partner calls, the golden-path dependency is:
+
+**`camel-quarkus-microprofile-fault-tolerance`**
+
+Use Camel EIP `.circuitBreaker()` with an explicit timeout and `.onFallback()` (log / DLQ / degrade). Pair with §2.4 retries/DLQ — circuit breaker fails fast; Dead Letter Channel handles exhausted async work.
+
+Do not omit this dependency on egress services and then “add Resilience4j later” — the template and lite-demo already standardize on MicroProfile Fault Tolerance via Camel.
+
+### 2.6. Mock-driven route tests
+
+Prove thin-route behaviour without a live broker:
+
+* Replace `kafka:*` / `http:*` with Camel `mock:` via `AdviceWith` in `@QuarkusTest`.
+* Assert accept → mock publish, permanent → 400, and Correlation-ID propagation.
+* Keep domain rules in bean unit tests; keep Avro/gRPC/SQL for Compose / lab smoke.
+
+Reference tests live under `platform-iac-core/examples/lite-demo` and `templates/quarkus-camel-app`.
+
 ---
 
 ## 3. Idempotency by Default
